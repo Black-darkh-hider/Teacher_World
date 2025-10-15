@@ -1,0 +1,160 @@
+<!-- templates/verify_otp.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify OTP - Teacher World</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://kit.fontawesome.com/a81368914c.js"></script>
+</head>
+<body>
+    <section class="otp-section">
+        <div class="container">
+            <div class="otp-container" id="otpContainer">
+                <h2>Verify Your {% if purpose == 'registration' %}Account{% elif purpose == 'reset_password' %}Password Reset{% else %}Username Reset{% endif %}</h2>
+                
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <p>A verification code has been sent to your email. Please enter it below to continue.</p>
+                
+                <form action="{{ url_for('verify_otp', purpose=purpose) }}" method="POST" id="otpForm">
+                    <div class="otp-inputs">
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                        <input type="text" maxlength="1" class="otp-input" name="otp[]" required>
+                    </div>
+                    
+                    {% if purpose == 'reset_password' %}
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <div class="password-field">
+                            <input type="password" id="newPassword" name="newPassword" required placeholder="Enter your new password">
+                            <button type="button" class="toggle-password">
+                                <i class="far fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% elif purpose == 'reset_username' %}
+                    <div class="form-group">
+                        <label for="newUsername">New Username</label>
+                        <input type="text" id="newUsername" name="newUsername" required placeholder="Enter your new username">
+                    </div>
+                    {% endif %}
+                    
+                    <div class="timer">
+                        <p>Resend code in <span id="timer">60</span> seconds</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="submit" class="btn-primary" id="verifyOtpBtn">Verify OTP</button>
+                    </div>
+                    
+                    <div class="otp-message" id="otpMessage"></div>
+                    
+                    <div class="auth-redirect">
+                        <p>Didn't receive the code? <a href="#" id="resendOtp">Resend OTP</a></p>
+                        <p><a href="{{ url_for('login') }}">Back to Login Page</a></p>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // OTP input auto-focus next field
+        const otpInputs = document.querySelectorAll(".otp-input");
+        otpInputs.forEach((input, index) => {
+            input.addEventListener("input", function() {
+                if (this.value.length === 1) {
+                    if (index < otpInputs.length - 1) {
+                        otpInputs[index + 1].focus();
+                    }
+                }
+            });
+            
+            input.addEventListener("keydown", function(e) {
+                if (e.key === "Backspace" && !this.value && index > 0) {
+                    otpInputs[index - 1].focus();
+                }
+            });
+        });
+        
+        // Toggle password visibility
+        const toggleButtons = document.querySelectorAll(".toggle-password");
+        toggleButtons.forEach(function(button) {
+            button.addEventListener("click", function() {
+                const passwordField = this.parentElement.querySelector("input");
+                const type = passwordField.getAttribute("type") === "password" ? "text" : "password";
+                passwordField.setAttribute("type", type);
+                this.querySelector("i").classList.toggle("fa-eye");
+                this.querySelector("i").classList.toggle("fa-eye-slash");
+            });
+        });
+        
+        // OTP timer
+        let timer = 60;
+        const timerDisplay = document.getElementById("timer");
+        const resendOtpLink = document.getElementById("resendOtp");
+        let timerInterval;
+        
+        function startTimer() {
+            timer = 60;
+            timerDisplay.textContent = timer;
+            resendOtpLink.style.pointerEvents = "none";
+            resendOtpLink.style.opacity = "0.5";
+            
+            clearInterval(timerInterval);
+            timerInterval = setInterval(function() {
+                if (timer > 0) {
+                    timer--;
+                    timerDisplay.textContent = timer;
+                } else {
+                    clearInterval(timerInterval);
+                    resendOtpLink.style.pointerEvents = "auto";
+                    resendOtpLink.style.opacity = "1";
+                }
+            }, 1000);
+        }
+        
+        startTimer(); // Start timer on page load
+        
+        resendOtpLink.addEventListener("click", function(e) {
+            e.preventDefault();
+            
+            fetch("{{ url_for('resend_otp') }}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: "purpose={{ purpose }}"
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById("otpMessage").innerText = data.message;
+                    document.getElementById("otpMessage").style.color = "#29c93c";
+                    startTimer();
+                } else {
+                    document.getElementById("otpMessage").innerText = data.message;
+                    document.getElementById("otpMessage").style.color = "red";
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                document.getElementById("otpMessage").innerText = "An error occurred. Please try again.";
+                document.getElementById("otpMessage").style.color = "red";
+            });
+        });
+    </script>
+</body>
+</html>
