@@ -1,0 +1,20 @@
+
+> teacher-world-backend@1.0.0 start
+> node src/server.js
+
+Server listening on 5000
+node:internal/crypto/keys:684
+    throw new ERR_INVALID_ARG_TYPE(
+          ^
+
+TypeError [ERR_INVALID_ARG_TYPE]: The "key" argument must be of type string or an instance of ArrayBuffer, Buffer, TypedArray, DataView, KeyObject, or CryptoKey. Received undefined
+    at prepareSecretKey (node:internal/crypto/keys:684:11)
+    at new Hmac (node:internal/crypto/hash:166:9)
+    at Object.createHmac (node:crypto:163:10)
+    at hashOtp (file:///workspace/backend/src/utils/crypto.js:4:17)
+    at issueAndSendOtp (file:///workspace/backend/src/controllers/auth.controller.js:179:19)
+    at register (file:///workspace/backend/src/controllers/auth.controller.js:36:9) {
+  code: 'ERR_INVALID_ARG_TYPE'
+}
+
+Node.js v22.20.0
