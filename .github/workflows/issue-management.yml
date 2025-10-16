@@ -1,0 +1,196 @@
+name: Issue and PR Management
+
+on:
+  issues:
+    types: [opened, labeled]
+  pull_request:
+    types: [opened, labeled, closed]
+  schedule:
+    # Run every day at 9 AM UTC to check for stale issues/PRs
+    - cron: '0 9 * * *'
+
+jobs:
+  auto-label-issues:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    
+    steps:
+    - name: Auto-label bug reports
+      if: contains(github.event.issue.title, 'bug') || contains(github.event.issue.body, 'bug')
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.addLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: ['bug', 'needs-triage']
+          })
+    
+    - name: Auto-label feature requests
+      if: contains(github.event.issue.title, 'feature') || contains(github.event.issue.body, 'feature')
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.addLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: ['enhancement', 'needs-triage']
+          })
+    
+    - name: Welcome new contributors
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: issues } = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            creator: context.payload.issue.user.login,
+            state: 'all'
+          });
+          
+          if (issues.length === 1) {
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `👋 Welcome to the Teacher World project! Thank you for opening your first issue. 
+              
+              We appreciate your contribution and will review this soon. If this is a bug report, please make sure to include:
+              - Steps to reproduce the issue
+              - Expected vs actual behavior
+              - Your environment details (OS, Node.js version, etc.)
+              
+              If this is a feature request, please describe:
+              - The problem you're trying to solve
+              - Your proposed solution
+              - Any alternatives you've considered`
+            });
+          }
+
+  auto-label-prs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Auto-label based on changed files
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          
+          const labels = [];
+          
+          const hasBackendChanges = files.some(file => file.filename.startsWith('backend/'));
+          const hasFrontendChanges = files.some(file => file.filename.startsWith('frontend/'));
+          const hasWorkflowChanges = files.some(file => file.filename.startsWith('.github/'));
+          const hasDocChanges = files.some(file => file.filename.endsWith('.md') || file.filename.endsWith('.txt'));
+          
+          if (hasBackendChanges) labels.push('backend');
+          if (hasFrontendChanges) labels.push('frontend');
+          if (hasWorkflowChanges) labels.push('github-actions');
+          if (hasDocChanges) labels.push('documentation');
+          
+          if (labels.length > 0) {
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: labels
+            });
+          }
+
+  stale-management:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: Mark stale issues and PRs
+      uses: actions/stale@v9
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        stale-issue-message: |
+          This issue has been automatically marked as stale because it has not had recent activity. 
+          It will be closed if no further activity occurs within 7 days. 
+          If this issue is still relevant, please add a comment to keep it open.
+        stale-pr-message: |
+          This pull request has been automatically marked as stale because it has not had recent activity. 
+          It will be closed if no further activity occurs within 7 days. 
+          If this PR is still relevant, please add a comment or push new commits to keep it open.
+        close-issue-message: |
+          This issue has been automatically closed due to inactivity. 
+          If you believe this issue is still relevant, please reopen it or create a new issue.
+        close-pr-message: |
+          This pull request has been automatically closed due to inactivity. 
+          If you believe this PR is still relevant, please reopen it or create a new PR.
+        days-before-stale: 30
+        days-before-close: 7
+        stale-issue-label: 'stale'
+        stale-pr-label: 'stale'
+        exempt-issue-labels: 'pinned,security,enhancement'
+        exempt-pr-labels: 'pinned,security'
+
+  pr-size-labeler:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'synchronize')
+    
+    steps:
+    - name: Label PR based on size
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          
+          const additions = pr.additions;
+          const deletions = pr.deletions;
+          const changes = additions + deletions;
+          
+          let sizeLabel = '';
+          
+          if (changes < 10) {
+            sizeLabel = 'size/XS';
+          } else if (changes < 50) {
+            sizeLabel = 'size/S';
+          } else if (changes < 200) {
+            sizeLabel = 'size/M';
+          } else if (changes < 500) {
+            sizeLabel = 'size/L';
+          } else {
+            sizeLabel = 'size/XL';
+          }
+          
+          // Remove existing size labels
+          const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const sizeLabels = labels.filter(label => label.name.startsWith('size/'));
+          for (const label of sizeLabels) {
+            await github.rest.issues.removeLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              name: label.name,
+            });
+          }
+          
+          // Add new size label
+          await github.rest.issues.addLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: [sizeLabel]
+          });

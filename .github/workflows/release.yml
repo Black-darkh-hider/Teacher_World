@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.2.3)'
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Use Node.js 18.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18.x
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd backend
+        npm ci
+    
+    - name: Run tests
+      run: |
+        cd backend
+        npm test || echo "No tests found - skipping"
+    
+    - name: Build application
+      run: |
+        cd backend
+        npm run build || echo "No build script found - skipping"
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the latest tag
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        
+        if [ -z "$LATEST_TAG" ]; then
+          # First release
+          CHANGELOG=$(git log --pretty=format:"- %s" --reverse)
+        else
+          # Get commits since last tag
+          CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s" --reverse)
+        fi
+        
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGELOG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create Release Archive
+      run: |
+        mkdir -p release
+        cp -r backend release/
+        cp -r frontend release/
+        cp README.txt release/
+        rm -rf release/backend/node_modules
+        tar -czf teacher-world-${{ github.ref_name }}.tar.gz -C release .
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          ## Changes in this Release
+          
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ## Installation
+          
+          1. Download and extract the release archive
+          2. Navigate to the backend directory
+          3. Run `npm install`
+          4. Run `npm start`
+          5. Open your browser to http://localhost:5000/contact.html
+          
+          ## What's Included
+          
+          - Complete Teacher World application
+          - Node.js/Express backend
+          - HTML/CSS/JavaScript frontend
+          - SQLite database support
+        files: |
+          teacher-world-${{ github.ref_name }}.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

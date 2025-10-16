@@ -1,0 +1,95 @@
+name: Auto-merge Dependabot PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Check if PR is from Dependabot
+      id: check-dependabot
+      run: |
+        if [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
+          echo "is_dependabot=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_dependabot=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Get PR details
+      id: pr-details
+      if: steps.check-dependabot.outputs.is_dependabot == 'true'
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+        
+        # Check if it's a patch or minor update
+        if [[ "$PR_TITLE" =~ "Bump.*from.*to.*" ]]; then
+          if [[ "$PR_TITLE" =~ "patch" ]] || [[ "$PR_TITLE" =~ "minor" ]]; then
+            echo "auto_mergeable=true" >> $GITHUB_OUTPUT
+          else
+            echo "auto_mergeable=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "auto_mergeable=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Wait for CI to complete
+      if: steps.pr-details.outputs.auto_mergeable == 'true'
+      uses: fountainhead/action-wait-for-check@v1.2.0
+      id: wait-for-ci
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        checkName: test
+        ref: ${{ github.event.pull_request.head.sha }}
+        timeoutSeconds: 600
+        intervalSeconds: 10
+    
+    - name: Auto-approve PR
+      if: steps.pr-details.outputs.auto_mergeable == 'true' && steps.wait-for-ci.outputs.conclusion == 'success'
+      uses: juliangruber/approve-pull-request-action@v2
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        number: ${{ github.event.pull_request.number }}
+    
+    - name: Enable auto-merge
+      if: steps.pr-details.outputs.auto_mergeable == 'true' && steps.wait-for-ci.outputs.conclusion == 'success'
+      run: |
+        gh pr merge ${{ github.event.pull_request.number }} --auto --squash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-manual-review:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+    - name: Check if major update
+      id: check-major
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        if [[ "$PR_TITLE" =~ "major" ]]; then
+          echo "is_major=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_major=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Comment on major updates
+      if: steps.check-major.outputs.is_major == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '🚨 **Major version update detected!** 🚨\n\nThis PR contains a major version update that requires manual review. Please:\n\n1. Review the changelog for breaking changes\n2. Test the application thoroughly\n3. Update any affected code\n4. Approve and merge manually when ready'
+          })
