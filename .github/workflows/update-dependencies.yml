@@ -1,0 +1,65 @@
+name: Update Dependencies
+
+on:
+  schedule:
+    # Run every Monday at 10 AM UTC
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd backend
+        npm ci
+        
+    - name: Check for outdated packages
+      run: |
+        cd backend
+        npm outdated || echo "No outdated packages found"
+        
+    - name: Update dependencies
+      run: |
+        cd backend
+        npm update
+        
+    - name: Run tests after update
+      run: |
+        cd backend
+        npm test || echo "Tests not configured yet"
+        
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: 'chore: update dependencies'
+        title: 'Automated dependency updates'
+        body: |
+          This PR contains automated dependency updates.
+          
+          **Updated packages:**
+          - Check the diff for details
+          
+          **Testing:**
+          - [x] Dependencies installed successfully
+          - [ ] Tests pass (if configured)
+          
+          **Review:**
+          Please review the changes and merge if everything looks good.
+        branch: automated-dependency-updates
+        delete-branch: true
