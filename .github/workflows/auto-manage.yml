@@ -1,0 +1,127 @@
+name: Auto Manage Issues and PRs
+
+on:
+  issues:
+    types: [opened, labeled]
+  pull_request:
+    types: [opened, labeled, synchronize]
+  schedule:
+    - cron: '0 9 * * 1' # Weekly on Monday at 9 AM UTC
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' || github.event_name == 'pull_request'
+    
+    steps:
+    - name: Auto-label issues
+      if: github.event_name == 'issues'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const issue = context.payload.issue;
+          const labels = [];
+          
+          // Auto-label based on title and body content
+          const title = issue.title.toLowerCase();
+          const body = issue.body ? issue.body.toLowerCase() : '';
+          
+          if (title.includes('bug') || title.includes('error') || title.includes('fix')) {
+            labels.push('bug');
+          }
+          if (title.includes('feature') || title.includes('enhancement')) {
+            labels.push('enhancement');
+          }
+          if (title.includes('documentation') || title.includes('docs')) {
+            labels.push('documentation');
+          }
+          if (title.includes('security')) {
+            labels.push('security');
+          }
+          if (title.includes('dependencies') || title.includes('deps')) {
+            labels.push('dependencies');
+          }
+          
+          // Add priority labels based on keywords
+          if (title.includes('urgent') || title.includes('critical') || title.includes('hotfix')) {
+            labels.push('priority: high');
+          } else if (title.includes('important')) {
+            labels.push('priority: medium');
+          } else {
+            labels.push('priority: low');
+          }
+          
+          if (labels.length > 0) {
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: labels
+            });
+          }
+
+  stale-issues:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: Mark stale issues
+      uses: actions/stale@v8
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        stale-issue-message: |
+          This issue has been automatically marked as stale because it has not had recent activity.
+          It will be closed if no further activity occurs within 7 days.
+        stale-pr-message: |
+          This pull request has been automatically marked as stale because it has not had recent activity.
+          It will be closed if no further activity occurs within 7 days.
+        stale-issue-label: 'stale'
+        stale-pr-label: 'stale'
+        close-issue-message: |
+          This issue has been automatically closed due to inactivity.
+          If you believe this was closed in error, please reopen it.
+        close-pr-message: |
+          This pull request has been automatically closed due to inactivity.
+          If you believe this was closed in error, please reopen it.
+        days-before-stale: 30
+        days-before-close: 7
+        only-labels: ''
+        only-issue-labels: ''
+        only-pr-labels: ''
+        exempt-issue-labels: 'priority: high,priority: critical,security'
+        exempt-pr-labels: 'priority: high,priority: critical,security'
+        operations-per-run: 100
+
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    
+    steps:
+    - name: Auto-merge dependency updates
+      if: contains(github.event.pull_request.labels.*.name, 'dependencies')
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.payload.pull_request.number
+          });
+          
+          // Only auto-merge if:
+          // 1. It's a dependency update
+          // 2. All checks are passing
+          // 3. It's not a major version update
+          const isDependencyUpdate = pr.title.toLowerCase().includes('dependabot') || 
+                                   pr.title.toLowerCase().includes('dependency');
+          const isMinorUpdate = !pr.title.toLowerCase().includes('major');
+          
+          if (isDependencyUpdate && isMinorUpdate) {
+            // Enable auto-merge
+            await github.rest.pulls.enableAutoMerge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              merge_method: 'squash'
+            });
+          }
