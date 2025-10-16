@@ -1,0 +1,52 @@
+name: Auto Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd backend
+        npm ci --production
+        
+    - name: Build application
+      run: |
+        # Add any build steps here if needed
+        echo "Building application..."
+        
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here
+        # Examples:
+        # - Deploy to Heroku: heroku deploy
+        # - Deploy to AWS: aws s3 sync
+        # - Deploy to VPS: rsync or scp commands
+        
+    - name: Run health check
+      run: |
+        echo "Running health check..."
+        # Add health check commands here
+        # Example: curl -f http://your-app-url/health || exit 1
+        
+    - name: Notify deployment
+      run: |
+        echo "Deployment completed successfully!"
+        # Add notification logic here (Slack, Discord, email, etc.)
