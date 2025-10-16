@@ -17,6 +17,14 @@ jest.mock('../services/logger', () => ({
 // Set test environment
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret';
+process.env.PORT = 0; // Use random available port for tests
+
+// Mock the server startup to prevent actual server from starting in tests
+const originalListen = require('express').application.listen;
+require('express').application.listen = function(...args) {
+  // Don't actually start the server in tests
+  return { close: () => {} };
+};
 
 const app = require('../server');
 
