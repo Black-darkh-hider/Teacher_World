@@ -1,0 +1,64 @@
+name: Auto Update Dependencies
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+    
+    - name: Update npm dependencies
+      run: |
+        cd backend
+        npm update
+        npm outdated || true
+    
+    - name: Check for changes
+      id: changes
+      run: |
+        if [[ -n $(git status -s) ]]; then
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create Pull Request
+      if: steps.changes.outputs.has_changes == 'true'
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: 'chore(deps): update npm dependencies'
+        title: 'chore(deps): Weekly dependency updates'
+        body: |
+          ## Automated Dependency Updates
+          
+          This PR contains automated updates to npm dependencies.
+          
+          ### Changes
+          - Updated dependencies to their latest compatible versions
+          
+          ### Testing
+          - [ ] CI checks pass
+          - [ ] Manual testing completed (if needed)
+          
+          ---
+          *This PR was created automatically by the Auto Update Dependencies workflow.*
+        branch: automated-dependency-updates
+        delete-branch: true
+        labels: |
+          dependencies
+          automated
