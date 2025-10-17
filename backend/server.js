@@ -303,12 +303,12 @@ app.post(
     body("email").isEmail().normalizeEmail(),
     body("password").isString().isLength({ min: 8 }),
     body("name").optional().isString(),
-    body("role").optional().isIn(["teacher", "employer"]).withMessage("Invalid role"),
+    body("role").optional().isIn(["teacher", "institution"]).withMessage("Invalid role"),
   ],
   asyncHandler(async (req, res) => {
     if (handleValidation(req, res)) return;
     const { email, password, name } = req.body;
-    const desiredRole = req.body.role === "employer" ? "employer" : "teacher";
+    const desiredRole = req.body.role === "institution" ? "institution" : "teacher";
     const existing = await dbGet("SELECT id, is_verified FROM users WHERE email = ?", [email]);
     if (existing && existing.is_verified) {
       return res.status(400).json({ success: false, message: "User already registered" });
@@ -319,35 +319,18 @@ app.post(
     let userId;
     if (existing) {
       await dbRun(
-        "UPDATE users SET password_hash = ?, name = ?, role = COALESCE(role, ?), updated_at = ? WHERE id = ?",
+        "UPDATE users SET password_hash = ?, name = ?, role = COALESCE(role, ?), updated_at = ?, is_verified = 1 WHERE id = ?",
         [passwordHash, name || null, desiredRole, timestamp, existing.id]
       );
       userId = existing.id;
     } else {
       const result = await dbRun(
-        "INSERT INTO users (email, password_hash, name, is_verified, role, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?)",
+        "INSERT INTO users (email, password_hash, name, is_verified, role, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
         [email, passwordHash, name || null, desiredRole, timestamp, timestamp]
       );
       userId = result.lastID;
     }
-
-    const purpose = "register";
-    const otp = generateOtpCode();
-    const otpHash = hashOtp(otp, email, purpose);
-    const expiresAt = nowMs() + 10 * 60 * 1000;
-    await dbRun(
-      "INSERT INTO otp_codes (user_id, purpose, otp_hash, expires_at, used, attempt_count, created_at) VALUES (?, ?, ?, ?, 0, 0, ?)",
-      [userId, purpose, otpHash, expiresAt, timestamp]
-    );
-
-    await sendEmail({
-      to: email,
-      subject: "Your TeacherWorld verification code",
-      text: `Your verification code is ${otp}. It expires in 10 minutes.`,
-      html: `<p>Your verification code is <b>${otp}</b>. It expires in 10 minutes.</p>`,
-    });
-
-    return res.json({ success: true, message: "OTP sent to email." });
+    return res.json({ success: true, message: "Registered successfully." });
   })
 );
 
